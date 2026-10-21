@@ -99,11 +99,85 @@ The output files contain the required routing fields: `ticket_id`, `customer_id`
 - Keyword-based classification and fallback parsing may fail on ambiguous or complex customer messages.
 - Tickets requiring human review should be assessed by a support agent before a final decision is made.
 
+
 ## Part D: Policy RAG Assistant and Refund Agent
-Implementation and evaluation pending.
+
+### Policy RAG Assistant
+
+Implemented an offline retrieval-augmented generation (RAG) evaluation pipeline using the project policy documents and `mock_llm.py`.
+
+- Split policy documents into 40-word chunks.
+- Compared retrieval with 10-word chunk overlap against retrieval without overlap.
+- Retrieved the top three relevant chunks for each evaluation question.
+- Evaluated retrieval using 14 questions from `data/raw/policy_eval.csv`.
+- Compared source-document accuracy, expected-fact accuracy, and token usage.
+
+### RAG Evaluation Results
+
+| Metric | 10-word overlap | No overlap |
+|---|---:|---:|
+| Chunks generated | 17 | 13 |
+| Evaluation questions | 14 | 14 |
+| Correct source documents | 12/14 | 12/14 |
+| Source accuracy | 85.71% | 85.71% |
+| Expected facts matched | 14/14 | 11/14 |
+| Fact accuracy | 100.00% | 78.57% |
+| Total tokens | 3,096 | 3,107 |
+| Mean tokens per question | 221.14 | 221.93 |
+
+The 10-word overlap configuration achieved higher expected-fact accuracy while using slightly fewer tokens overall. Both configurations achieved the same source-document accuracy.
+
+### Refund Agent
+
+Implemented a tool-using refund agent with order lookup, policy search, refund calculation, refund issuance, escalation to human review, retry handling, execution limits, and JSON checkpoint files.
+
+The agent was evaluated on seven predefined scenarios covering eligible refunds, denied refunds, escalation, missing orders, and fallback behavior.
+
+| Scenario | Actual outcome | Refund amount (INR) |
+|---|---|---:|
+| S1 | REFUND | 128.25 |
+| S2 | REFUND | 135.00 |
+| S3 | ESCALATE | 1,999.00 |
+| S4 | DENIED | 0.00 |
+| S5 | DENIED | 0.00 |
+| S6 | NOT_FOUND | 0.00 |
+| S7 | FALLBACK | 0.00 |
+
+- Outcome matches: 7/7 (100%).
+- Refund amount matches: 7/7 (100%).
+- Refunds issued: 2.
+- Cases escalated to human review: 1.
+- Other cases resulted in denial, missing-order handling, or fallback.
+- Saved scenario checkpoints in `state/` and generated an audit-style refund ledger.
+- Verified that completed checkpoints can be loaded and the ledger rebuilt without losing scenario records.
+
+### Generated Outputs
+
+RAG outputs:
+- `outputs/rag_answers_overlap0.csv`
+- `outputs/rag_answers_overlap10.csv`
+- `outputs/rag_evaluation_summary.csv`
+- `outputs/rag_retrieval_results.csv`
+
+Refund-agent outputs:
+- `outputs/agent_runs.jsonl`
+- `outputs/refund_ledger.jsonl`
+- `state/S1.json` through `state/S7.json`
+
+### Limitations
+
+- RAG and refund-agent results use the offline mock model and do not establish real-world LLM performance.
+- RAG accuracy was evaluated on only 14 questions; broader policy coverage is needed.
+- Refund-agent evaluation used seven predefined scenarios, so it does not establish production reliability.
+- Completed checkpoints are recovered, but resuming an interrupted scenario from its saved messages is not yet implemented.
+- Refund decisions, payment execution, and escalations would require appropriate validation, authorization, and monitoring in a real system.
+
 
 ## Limitations and Next Steps
+
 - Verify data quality and analysis assumptions.
-- Complete and evaluate Parts B, C, and D.
-- Restore the original assignment-provided `mock_llm.py` before final submission.
-- Document the methods and evaluation results for each completed part.
+- Review the limitations documented for Parts A–D.
+- Restore the original assignment-provided `mock_llm.py` before final submission, if required by the assignment.
+- Validate the scripts and generated outputs in a clean environment.
+- Consider expanding the evaluation datasets and testing error recovery, edge cases, and policy coverage.
+
