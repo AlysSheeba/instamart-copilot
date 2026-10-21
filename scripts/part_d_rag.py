@@ -57,7 +57,7 @@ def retrieve(question, chunks, vectorizer, matrix):
 
 def answer_question(question, retrieved):
     context = "\n".join(
-        f"[{item['source}] {item['text']}"
+        f"[{item['source']}] {item['text']}"
         for item in retrieved
     )
     messages = [
