@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "instamart.db"
-SQL_PATH = ROOT / "sql" / "analysis_queries.sql"
+SQL_PATH = ROOT / "sql" / "queries.sql"
 OUTPUT_DIR = ROOT / "outputs"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
