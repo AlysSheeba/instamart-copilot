@@ -8,9 +8,13 @@ import json
 import random
 import re
 import time
+import sys
+from pathlib import Path
 from collections import Counter
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import mock_llm
 
 
