@@ -1,0 +1,42 @@
+{
+  "scenario_id": "S7",
+  "complete": true,
+  "result": {
+    "scenario_id": "S7",
+    "customer_id": "C0007",
+    "order_id": null,
+    "actual_outcome": "FALLBACK",
+    "expected_outcome": "FALLBACK",
+    "refund_inr": 0.0,
+    "expected_refund_inr": 0.0,
+    "outcome_match": true,
+    "refund_match": true,
+    "steps": 1,
+    "tokens_used": 47,
+    "elapsed_seconds": 0.0,
+    "trace": [
+      {
+        "step": 1,
+        "finish_reason": "tool_calls",
+        "tokens": 47
+      }
+    ]
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "AGENT. Follow refund policy. Use tools to verify orders, check eligibility, calculate refunds, and escalate refunds above INR 1000. Never invent order data."
+    },
+    {
+      "role": "user",
+      "content": "[LOOP] Refund order ORD-100048."
+    }
+  ],
+  "trace": [
+    {
+      "step": 1,
+      "finish_reason": "tool_calls",
+      "tokens": 47
+    }
+  ]
+}

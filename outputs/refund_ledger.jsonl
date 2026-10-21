@@ -1,0 +1,7 @@
+{"scenario_id": "S1", "order_id": "ORD-100048", "outcome": "REFUND", "refund_inr": 128.25, "ledger_status": "ISSUED"}
+{"scenario_id": "S2", "order_id": "ORD-100067", "outcome": "REFUND", "refund_inr": 135.0, "ledger_status": "ISSUED"}
+{"scenario_id": "S3", "order_id": "ORD-100145", "outcome": "ESCALATE", "refund_inr": 1999.0, "ledger_status": "PENDING_HUMAN"}
+{"scenario_id": "S4", "order_id": "ORD-100001", "outcome": "DENIED", "refund_inr": 0.0, "ledger_status": "NO_PAYMENT"}
+{"scenario_id": "S5", "order_id": "ORD-100025", "outcome": "DENIED", "refund_inr": 0.0, "ledger_status": "NO_PAYMENT"}
+{"scenario_id": "S6", "order_id": "ORD-999999", "outcome": "NOT_FOUND", "refund_inr": 0.0, "ledger_status": "NO_PAYMENT"}
+{"scenario_id": "S7", "order_id": null, "outcome": "FALLBACK", "refund_inr": 0.0, "ledger_status": "NO_PAYMENT"}
