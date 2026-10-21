@@ -4,8 +4,95 @@
 This project analyzes Instamart customer, product, order, and support-ticket data using Python, data cleaning, SQLite, and SQL analysis.
 
 ## Reproduce
-1. Install Python 3.
-2. Install dependencies using: `pip install -r requirements.txt`
+
+The project uses Python 3.11 or newer and the supplied offline `mock_llm.py`. No API key, paid service, or network access is required for model calls.
+
+### 1. Clone the repository and create an environment
+
+```bash
+git clone https://github.com/AlysSheeba/instamart-copilot.git
+cd instamart-copilot
+python -m venv .venv
+```
+
+Activate the virtual environment.
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Linux or macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+Install the dependencies:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 2. Generate the data and prepare the database
+
+Run the supplied data-generation script, clean the datasets, build the SQLite database, and execute the SQL analyses:
+
+```bash
+python generate_data.py
+python scripts/clean_customers.py
+python scripts/clean_products.py
+python scripts/clean_orders.py
+python scripts/clean_tickets.py
+python scripts/build_database.py
+python scripts/run_sql_analysis.py
+```
+
+This prepares the datasets and database and regenerates the six Part A query-result CSV files.
+
+### 3. Run Part B: Customer analytics
+
+```bash
+python scripts/part_b_analysis.py
+```
+
+This runs customer segmentation and lapse prediction and regenerates the Part B analysis outputs.
+
+### 4. Run Part C: Ticket triage
+
+```bash
+python scripts/part_c_triage.py
+```
+
+This runs the offline ticket-classification evaluation and regenerates the triage outputs.
+
+### 5. Run Part D: Retrieval-augmented generation
+
+```bash
+python scripts/part_d_rag.py
+```
+
+This evaluates retrieval and answer grounding with and without chunk overlap and regenerates the RAG outputs.
+
+### 6. Run Part D: Refund agent
+
+The repository includes saved agent checkpoints under `state/`. To run the scenarios afresh rather than reuse completed checkpoints, remove the existing scenario checkpoints first.
+
+```bash
+python -c "from pathlib import Path; [p.unlink() for p in Path('state').glob('S*.json')]"
+python scripts/part_d_agent.py
+```
+
+This runs the seven refund-agent scenarios and regenerates the agent-run and refund-ledger outputs and scenario checkpoints.
+
+### 7. Review the results
+
+The generated CSV and JSONL files are saved under `outputs/`. The README's Part A–D sections document the evaluation results, key metrics, and limitations.
+
+The project uses an offline mock language model. Refund outcomes and ledger entries are simulated and do not represent real financial transactions.
+
 
 ## Part A: Data Cleaning and SQL Analysis
 - Generated raw datasets for customers, products, orders, and tickets.
