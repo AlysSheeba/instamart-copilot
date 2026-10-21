@@ -1,0 +1,11 @@
+feature,importance
+numeric__frequency,0.2699413050065972
+numeric__monetary,0.24351557504508867
+numeric__recency,0.10887917948271132
+numeric__avg_delivery_minutes,0.06997854489797602
+numeric__avg_discount_pct,0.05842445696577993
+numeric__cancellation_rate,0.055330933813599256
+numeric__tenure_days,0.05525279889973478
+numeric__age,0.049800975645377936
+categorical__favourite_category_Electronics,0.031754090426802314
+categorical__favourite_category_Personal Care,0.012130192367849211
