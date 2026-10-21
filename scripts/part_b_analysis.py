@@ -76,8 +76,16 @@ rfm = (
 
 rfm["recency"] = (SNAPSHOT - rfm["last_order_ts"]).dt.days
 rfm = rfm.drop(columns=["last_order_ts"])
-rfm = rfm.dropna(subset=["recency", "frequency", "monetary"])
+rfm = rfm.dropna(subset=["recency", "frequency"])
 rfm = rfm[rfm["recency"] >= 0].copy()
+
+# Impute missing customer monetary totals using the median
+missing_monetary = rfm["monetary"].isna()
+median_monetary = rfm["monetary"].median()
+rfm.loc[missing_monetary, "monetary"] = median_monetary
+
+print("Customers with imputed monetary totals:", int(missing_monetary.sum()))
+print("Median monetary value used:", round(median_monetary, 2))
 
 rfm_features = ["recency", "frequency", "monetary"]
 rfm_scaler = StandardScaler()
