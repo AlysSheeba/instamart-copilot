@@ -1,6 +1,5 @@
 from pathlib import Path
 import warnings
-
 import joblib
 import numpy as np
 import pandas as pd
@@ -8,32 +7,35 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
+    silhouette_score,
     confusion_matrix,
-    f1_score,
     precision_score,
     recall_score,
-    silhouette_score,
+    f1_score,
+    accuracy_score,
 )
-from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 
-warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore")
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "clean"
 OUTPUT = ROOT / "outputs"
 OUTPUT.mkdir(parents=True, exist_ok=True)
 
-SNAPSHOT = pd.Timestamp("2025-10-01 00:00:00")
-CUTOFF = pd.Timestamp("2025-09-01 00:00:00")
+SNAPSHOT = pd.Timestamp("2025-10-01")
+CUTOFF = pd.Timestamp("2025-09-01")
+SEPTEMBER_END = pd.Timestamp("2025-10-01")
 
+# ---------------------------------------------------------
+# 1. LOAD AND PREPARE DATA
+# ---------------------------------------------------------
 orders = pd.read_csv(DATA / "orders.csv")
 customers = pd.read_csv(DATA / "customers.csv")
 products = pd.read_csv(DATA / "products.csv")
@@ -42,292 +44,225 @@ orders["order_ts"] = pd.to_datetime(orders["order_ts"], errors="coerce")
 customers["signup_date"] = pd.to_datetime(
     customers["signup_date"], errors="coerce"
 )
+orders["status"] = orders["status"].astype(str).str.strip().str.lower()
 
-orders["status"] = (
-    orders["status"].astype("string").str.strip().str.lower()
+for col in ["order_amount", "discount_pct", "delivery_minutes"]:
+    orders[col] = pd.to_numeric(orders[col], errors="coerce")
+
+orders = orders.dropna(subset=["customer_id", "order_id", "order_ts"])
+completed = orders[orders["status"] == "completed"].copy()
+
+print("\nPART B: CUSTOMER SEGMENTATION AND LAPSE PREDICTION")
+print("-" * 60)
+print("Clean customers:", len(customers))
+print("Clean orders:", len(orders))
+print("Completed orders:", len(completed))
+
+# ---------------------------------------------------------
+# 2. RFM FEATURES AND K-MEANS SEGMENTATION
+# ---------------------------------------------------------
+# RFM uses completed orders before the 2025-10-01 snapshot.
+rfm_orders = completed[completed["order_ts"] < SNAPSHOT].copy()
+
+rfm = (
+    rfm_orders.groupby("customer_id")
+    .agg(
+        last_order_ts=("order_ts", "max"),
+        frequency=("order_id", "nunique"),
+        monetary=("order_amount", lambda x: x.sum(min_count=1)),
+    )
+    .reset_index()
 )
 
-print("Part B — Customer Segments and Lapse Prediction")
-print(f"Orders loaded: {len(orders):,}")
-print(f"Customers loaded: {len(customers):,}")
-print(f"Products loaded: {len(products):,}")
-# ============================================================
-# PART B — TASKS 1–3: RFM, K-MEANS, SEGMENT PROFILES AND PCA
-# ============================================================
-
-print("\nTASK 1: BUILDING THE RFM TABLE")
-
-completed = orders[
-    (orders["status"] == "completed")
-    & orders["order_ts"].notna()
-].copy()
-
-completed = completed[completed["customer_id"].notna()]
-completed["order_amount"] = pd.to_numeric(
-    completed["order_amount"], errors="coerce"
-)
-
-rfm = completed.groupby("customer_id").agg(
-    last_order_ts=("order_ts", "max"),
-    frequency=("order_id", "nunique"),
-    monetary=("order_amount", lambda x: x.sum(min_count=1)),
-).reset_index()
-
-rfm["recency"] = (
-    SNAPSHOT - rfm["last_order_ts"]
-).dt.days
-
-rfm = rfm[
-    ["customer_id", "recency", "frequency", "monetary"]
-].dropna()
-
+rfm["recency"] = (SNAPSHOT - rfm["last_order_ts"]).dt.days
+rfm = rfm.drop(columns=["last_order_ts"])
+rfm = rfm.dropna(subset=["recency", "frequency", "monetary"])
 rfm = rfm[rfm["recency"] >= 0].copy()
 
-print(f"RFM customers: {len(rfm):,}")
-print("\nRFM summary:")
-print(rfm[["recency", "frequency", "monetary"]].describe().round(2))
-
-print("\nTASK 2: K-MEANS CLUSTERING")
-
 rfm_features = ["recency", "frequency", "monetary"]
-scaler_rfm = StandardScaler()
-scaled_rfm = scaler_rfm.fit_transform(rfm[rfm_features])
+rfm_scaler = StandardScaler()
+rfm_scaled = rfm_scaler.fit_transform(rfm[rfm_features])
 
-cluster_results = []
-cluster_models = {}
+print("\nRFM SUMMARY")
+print(rfm[rfm_features].describe().round(2))
 
+# Compare K=2 through K=8.
+k_results = []
 for k in range(2, 9):
-    model = KMeans(
-        n_clusters=k,
-        n_init=10,
-        random_state=42,
-    )
-    labels = model.fit_predict(scaled_rfm)
-    silhouette = silhouette_score(scaled_rfm, labels)
-
-    cluster_results.append({
-        "K": k,
-        "inertia": model.inertia_,
-        "silhouette": silhouette,
+    km = KMeans(n_clusters=k, n_init=10, random_state=42)
+    labels = km.fit_predict(rfm_scaled)
+    k_results.append({
+        "k": k,
+        "inertia": km.inertia_,
+        "silhouette": silhouette_score(rfm_scaled, labels),
     })
-    cluster_models[k] = model
 
-cluster_table = pd.DataFrame(cluster_results)
-print("\nK-means comparison:")
-print(cluster_table.round(3).to_string(index=False))
+k_table = pd.DataFrame(k_results)
+k_table.to_csv(OUTPUT / "kmeans_comparison.csv", index=False)
+print("\nK-MEANS COMPARISON")
+print(k_table.round(3).to_string(index=False))
 
-# Choose K=4 as a practical balance of segment detail,
-# clustering quality, and business interpretability.
+# K=4 is selected for a balance of silhouette score,
+# elbow behaviour, and business interpretability.
 FINAL_K = 4
-final_kmeans = cluster_models[FINAL_K]
-rfm["segment_id"] = final_kmeans.labels_
+kmeans = KMeans(n_clusters=FINAL_K, n_init=10, random_state=42)
+rfm["segment_id"] = kmeans.fit_predict(rfm_scaled)
 
-profile = rfm.groupby("segment_id").agg(
-    customer_count=("customer_id", "size"),
-    mean_recency=("recency", "mean"),
-    mean_frequency=("frequency", "mean"),
-    mean_monetary=("monetary", "mean"),
-).round(2)
-
-premium_id = profile["mean_monetary"].idxmax()
-
-# Give each cluster a readable name based on its behaviour.
-segment_names = {}
-
-for segment_id, row in profile.iterrows():
-    if segment_id == premium_id:
-        segment_names[segment_id] = "Premium Customers"
-    elif row["mean_frequency"] >= profile["mean_frequency"].median():
-        segment_names[segment_id] = "Frequent Customers"
-    elif row["mean_recency"] >= profile["mean_recency"].median():
-        segment_names[segment_id] = "At-Risk Customers"
-    else:
-        segment_names[segment_id] = "Developing Customers"
-
-rfm["segment_name"] = rfm["segment_id"].map(segment_names)
-rfm["is_premium"] = rfm["segment_id"].eq(premium_id)
-
-print("\nSegment profiles:")
-print(profile.to_string())
-print("\nSegment names:")
-for segment_id, name in segment_names.items():
-    print(f"Cluster {segment_id}: {name}")
-print(f"Premium cluster ID: {premium_id}")
-
-print(
-    "\nInterpretation: K=8 will generally have lower inertia than K=2 "
-    "because adding clusters gives K-means more flexibility to reduce "
-    "within-cluster distances. Lower inertia always improves as K grows, "
-    "so it cannot identify the best business solution by itself; "
-    "silhouette scores and useful, actionable segment profiles matter too."
+profile = (
+    rfm.groupby("segment_id")
+    .agg(
+        customers=("customer_id", "count"),
+        mean_recency=("recency", "mean"),
+        mean_frequency=("frequency", "mean"),
+        mean_monetary=("monetary", "mean"),
+        median_monetary=("monetary", "median"),
+    )
+    .reset_index()
 )
 
-print("\nTASK 3(c): PCA")
+premium_segment = int(
+    profile.loc[profile["mean_monetary"].idxmax(), "segment_id"]
+)
 
-pca = PCA(n_components=2)
-pca.fit(scaled_rfm)
+# Give segment names from their observed behaviour.
+def name_segment(row):
+    if row["segment_id"] == premium_segment:
+        return "Premium High-Value"
+    if row["mean_frequency"] >= rfm["frequency"].median():
+        return "Frequent Customers"
+    if row["mean_recency"] >= rfm["recency"].median():
+        return "At-Risk / Inactive"
+    return "Developing Customers"
 
-print("PCA explained variance ratios:", pca.explained_variance_ratio_.round(3))
-print("Total explained variance:", round(pca.explained_variance_ratio_.sum(), 3))
+profile["segment_name"] = profile.apply(name_segment, axis=1)
+name_lookup = dict(zip(profile["segment_id"], profile["segment_name"]))
 
-segment_output = rfm[
+rfm["segment_name"] = rfm["segment_id"].map(name_lookup)
+rfm["is_premium"] = (rfm["segment_id"] == premium_segment).astype(int)
+
+segments = rfm[
     [
-        "customer_id",
-        "recency",
-        "frequency",
-        "monetary",
-        "segment_id",
-        "segment_name",
-        "is_premium",
+        "customer_id", "recency", "frequency", "monetary",
+        "segment_id", "segment_name", "is_premium"
     ]
 ].copy()
+segments.to_csv(OUTPUT / "customer_segments.csv", index=False)
 
-segment_output.to_csv(OUTPUT / "customer_segments.csv", index=False)
-print("\nSaved outputs/customer_segments.csv")
-# ============================================================
-# TASK 4: BUILD THE LEAKAGE-SAFE LAPSE DATASET
-# ============================================================
-
-print("\nTASK 4: BUILDING THE LAPSE DATASET")
-
-# Only orders strictly before the cutoff may become features.
-pre_cutoff = orders[
-    orders["order_ts"].notna()
-    & (orders["order_ts"] < CUTOFF)
-].copy()
-
-pre_completed = pre_cutoff[
-    pre_cutoff["status"] == "completed"
-].copy()
-
-# Customers must have at least one completed order before cutoff.
-cohort_ids = pre_completed["customer_id"].dropna().unique()
-
-# Label window: September 1 through September 30, 2025.
-september_completed = orders[
-    orders["order_ts"].notna()
-    & (orders["order_ts"] >= CUTOFF)
-    & (orders["order_ts"] < pd.Timestamp("2025-10-01"))
-    & (orders["status"] == "completed")
-]
-
-september_active_ids = set(
-    september_completed["customer_id"].dropna().unique()
+print("\nSEGMENT PROFILES")
+print(profile.round(2).to_string(index=False))
+print("\nPremium segment ID:", premium_segment)
+print(
+    "Inertia generally decreases as K increases because more clusters "
+    "fit the data more closely. It should be considered alongside "
+    "silhouette score and whether the segments are useful to the business."
 )
 
-cohort = customers[
+pca = PCA(n_components=2, random_state=42)
+pca_scores = pca.fit_transform(rfm_scaled)
+print(
+    "\nPCA explained variance ratios:",
+    np.round(pca.explained_variance_ratio_, 3),
+)
+print(
+    "PCA total variance explained:",
+    round(pca.explained_variance_ratio_.sum(), 3),
+)
+
+# ---------------------------------------------------------
+# 3. BUILD LAPSE LABELS AND PRE-CUTOFF FEATURES
+# ---------------------------------------------------------
+# Cohort: customers with at least one completed order before Sep 1.
+pre_cutoff = completed[completed["order_ts"] < CUTOFF].copy()
+cohort_ids = pre_cutoff["customer_id"].drop_duplicates()
+
+# Lapsed = no completed order from Sep 1 through Sep 30.
+september_completed = completed[
+    (completed["order_ts"] >= CUTOFF)
+    & (completed["order_ts"] < SEPTEMBER_END)
+]
+september_active_ids = set(september_completed["customer_id"])
+
+model_data = customers[
     customers["customer_id"].isin(cohort_ids)
 ].copy()
-
-cohort["lapsed"] = (
-    ~cohort["customer_id"].isin(september_active_ids)
+model_data["lapsed"] = (
+    ~model_data["customer_id"].isin(september_active_ids)
 ).astype(int)
 
-# Historical completed-order behaviour.
-pre_completed["order_amount"] = pd.to_numeric(
-    pre_completed["order_amount"], errors="coerce"
-)
-pre_completed["discount_pct"] = pd.to_numeric(
-    pre_completed["discount_pct"], errors="coerce"
-)
-pre_completed["delivery_minutes"] = pd.to_numeric(
-    pre_completed["delivery_minutes"], errors="coerce"
-)
+# Historical numeric features: strictly before Sep 1.
+historical_completed = pre_cutoff.copy()
 
-historical_features = pre_completed.groupby("customer_id").agg(
-    last_order_ts=("order_ts", "max"),
-    frequency=("order_id", "nunique"),
-    monetary=("order_amount", lambda x: x.sum(min_count=1)),
-    avg_discount_pct=("discount_pct", "mean"),
-    avg_delivery_minutes=("delivery_minutes", "mean"),
-).reset_index()
-
-historical_features["recency"] = (
-    CUTOFF - historical_features["last_order_ts"]
+historical_rfm = (
+    historical_completed.groupby("customer_id")
+    .agg(
+        last_order_ts=("order_ts", "max"),
+        frequency=("order_id", "nunique"),
+        monetary=("order_amount", lambda x: x.sum(min_count=1)),
+        avg_discount_pct=("discount_pct", "mean"),
+        avg_delivery_minutes=("delivery_minutes", "mean"),
+    )
+    .reset_index()
+)
+historical_rfm["recency"] = (
+    CUTOFF - historical_rfm["last_order_ts"]
 ).dt.days
+historical_rfm = historical_rfm.drop(columns=["last_order_ts"])
 
-# Cancellation rate among final-status order records before cutoff.
-final_status_orders = pre_cutoff[
-    pre_cutoff["status"].isin(["completed", "cancelled"])
+# Cancellation rate uses completed/cancelled final-status records
+# strictly before the cutoff.
+pre_final = orders[
+    (orders["order_ts"] < CUTOFF)
+    & (orders["status"].isin(["completed", "cancelled"]))
 ].copy()
-
-final_status_orders["is_cancelled"] = (
-    final_status_orders["status"] == "cancelled"
+pre_final["is_cancelled"] = (
+    pre_final["status"] == "cancelled"
 ).astype(int)
 
-cancellation_features = final_status_orders.groupby(
-    "customer_id"
-).agg(
-    final_order_count=("order_id", "nunique"),
-    cancelled_order_count=("is_cancelled", "sum"),
-).reset_index()
-
-cancellation_features["cancellation_rate"] = (
-    cancellation_features["cancelled_order_count"]
-    / cancellation_features["final_order_count"].replace(0, np.nan)
+cancel_rates = (
+    pre_final.groupby("customer_id")["is_cancelled"]
+    .mean()
+    .rename("cancellation_rate")
+    .reset_index()
 )
 
-# Favourite category based only on completed orders before cutoff.
-pre_completed_with_category = pre_completed.merge(
-    products[["product_id", "category"]],
+# Favourite product category from pre-cutoff completed orders.
+category_orders = historical_completed.merge(
+    products[["product_id", "category"]].drop_duplicates("product_id"),
     on="product_id",
     how="left",
 )
+category_counts = (
+    category_orders.dropna(subset=["category"])
+    .groupby(["customer_id", "category"])
+    .size()
+    .reset_index(name="order_count")
+    .sort_values(
+        ["customer_id", "order_count", "category"],
+        ascending=[True, False, True],
+    )
+)
+favourite_category = (
+    category_counts.drop_duplicates("customer_id")
+    [["customer_id", "category"]]
+    .rename(columns={"category": "favourite_category"})
+)
 
-def most_frequent_category(series):
-    values = series.dropna().astype(str)
-    if values.empty:
-        return "Unknown"
-    return values.value_counts().index[0]
-
-favourite_category = pre_completed_with_category.groupby(
-    "customer_id"
-)["category"].agg(most_frequent_category).rename(
-    "favourite_category"
-).reset_index()
-
-# Join historical features and customer attributes.
-model_data = cohort.merge(
-    historical_features.drop(columns=["last_order_ts"]),
-    on="customer_id",
-    how="left",
-).merge(
-    cancellation_features[["customer_id", "cancellation_rate"]],
-    on="customer_id",
-    how="left",
-).merge(
-    favourite_category,
-    on="customer_id",
-    how="left",
+model_data = model_data.merge(
+    historical_rfm, on="customer_id", how="left"
+)
+model_data = model_data.merge(
+    cancel_rates, on="customer_id", how="left"
+)
+model_data = model_data.merge(
+    favourite_category, on="customer_id", how="left"
 )
 
 model_data["tenure_days"] = (
     CUTOFF - model_data["signup_date"]
 ).dt.days
 
-model_data["favourite_category"] = (
-    model_data["favourite_category"].fillna("Unknown")
-)
-model_data["city"] = model_data["city"].fillna("Unknown").astype(str)
-model_data["gender"] = model_data["gender"].fillna("Unknown").astype(str)
-
-# Remove any customer whose signup date is after the cutoff or missing.
-model_data = model_data[
-    model_data["tenure_days"].notna()
-    & (model_data["tenure_days"] >= 0)
-].copy()
-
-print("Cohort size:", len(model_data))
-print("Lapsed customers:", int(model_data["lapsed"].sum()))
-print(
-    "Lapse percentage:",
-    round(model_data["lapsed"].mean() * 100, 2), "%",
-)
-
-print("\nTarget distribution:")
-print(model_data["lapsed"].value_counts().sort_index())
-
-# No segment_id, segment_name, or is_premium is included as a feature.
+# Do not include segment_id, segment_name, monetary from whole-window
+# segments, is_premium, or September activity as model features.
 numeric_features = [
     "recency",
     "frequency",
@@ -344,137 +279,116 @@ categorical_features = [
     "favourite_category",
 ]
 
-feature_columns = numeric_features + categorical_features
+for col in numeric_features:
+    model_data[col] = pd.to_numeric(model_data[col], errors="coerce")
 
-X = model_data[feature_columns].copy()
-y = model_data["lapsed"].copy()
+for col in categorical_features:
+    model_data[col] = model_data[col].fillna("Unknown").astype(str)
+
+# Remove customers with impossible negative tenure.
+model_data = model_data[
+    model_data["tenure_days"].isna()
+    | (model_data["tenure_days"] >= 0)
+].copy()
+
+X = model_data[numeric_features + categorical_features].copy()
+y = model_data["lapsed"].astype(int).copy()
+
+# Confirm the features contain no post-cutoff order information.
+assert "segment_id" not in X.columns
+assert "segment_name" not in X.columns
+assert "is_premium" not in X.columns
+assert pre_cutoff["order_ts"].max() < CUTOFF
 
 X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
-    test_size=0.2,
+    test_size=0.20,
     stratify=y,
     random_state=42,
 )
 
-print("\nTraining rows:", len(X_train))
-print("Test rows:", len(X_test))
-print("Feature columns:", feature_columns)
+print("\nLAPSE COHORT")
+print("Cohort size:", len(model_data))
+print("Lapsed customers:", int(y.sum()))
+print("Lapse rate (%):", round(y.mean() * 100, 2))
+print("Train size:", len(X_train))
+print("Test size:", len(X_test))
 
-# Guard against accidental future-data leakage in feature creation.
-assert pre_cutoff["order_ts"].max() < CUTOFF
-assert not any(
-    col in feature_columns
-    for col in ["segment_id", "segment_name", "is_premium"]
-)
+# Baseline: predict every customer as not lapsed.
+baseline_predictions = np.zeros(len(y_test), dtype=int)
+print("\nBASELINE: predict all customers as not lapsed")
+print("Accuracy:", round(accuracy_score(y_test, baseline_predictions), 3))
+print("Lapsed-class F1:", round(f1_score(y_test, baseline_predictions), 3))
 
-print("Leakage checks passed: features use pre-cutoff orders only.")
-print("Segment labels are not used as model features.")
-# ============================================================
-# TASKS 5–6: PREPROCESSING, BASELINE AND MODEL TUNING
-# ============================================================
-
-print("\nTASK 5: TRAINING-ONLY PREPROCESSING")
-
+# ---------------------------------------------------------
+# 4. PREPROCESSING AND TRAIN-ONLY FITTING
+# ---------------------------------------------------------
 numeric_pipeline = Pipeline([
     ("imputer", SimpleImputer(strategy="median")),
     ("scaler", StandardScaler()),
 ])
-
 categorical_pipeline = Pipeline([
     ("imputer", SimpleImputer(strategy="most_frequent")),
-    ("encoder", OneHotEncoder(
+    ("onehot", OneHotEncoder(
         drop="first",
         handle_unknown="ignore",
     )),
 ])
-
 preprocessor = ColumnTransformer([
     ("numeric", numeric_pipeline, numeric_features),
     ("categorical", categorical_pipeline, categorical_features),
 ])
 
-# Fit the preprocessing pipeline on training rows only.
-X_train_processed = preprocessor.fit_transform(X_train)
-X_test_processed = preprocessor.transform(X_test)
+# Fit preprocessing on training data only for diagnostics.
+preprocessor.fit(X_train)
+transformed_train = preprocessor.transform(X_train)
 
-# Verify there are no missing values in the processed features.
-def contains_missing(matrix):
-    if hasattr(matrix, "data") and hasattr(matrix, "indices"):
-        return bool(np.isnan(matrix.data).any())
-    return bool(np.isnan(np.asarray(matrix)).any())
+if hasattr(transformed_train, "toarray"):
+    transformed_train_array = transformed_train.toarray()
+else:
+    transformed_train_array = np.asarray(transformed_train)
 
-assert not contains_missing(X_train_processed)
-assert not contains_missing(X_test_processed)
-
-print("No missing values in processed training or test features.")
-
-# Show the training-only frequency scaler mean versus full-cohort mean.
-frequency_mean_train = preprocessor.named_transformers_[
-    "numeric"
-].named_steps["imputer"].statistics_[
-    numeric_features.index("frequency")
-]
-
-# The scaler's mean is measured after median imputation.
-frequency_scaler_mean = preprocessor.named_transformers_[
-    "numeric"
-].named_steps["scaler"].mean_[
-    numeric_features.index("frequency")
-]
-
-print("Frequency mean used by scaler (training rows):",
-      round(frequency_scaler_mean, 3))
-print("Full-cohort raw frequency mean:",
-      round(model_data["frequency"].mean(), 3))
 print(
-    "These means can differ because the scaler is fitted only on "
-    "training rows and uses the training-only imputed feature values."
+    "\nMissing values after training-fitted preprocessing:",
+    int(np.isnan(transformed_train_array).sum()),
 )
 
-print("\nTASK 6(a): BASELINE")
+numeric_scaler = (
+    preprocessor.named_transformers_["numeric"]
+    .named_steps["scaler"]
+)
+frequency_position = numeric_features.index("frequency")
 
-baseline_predictions = np.zeros(len(y_test), dtype=int)
+print(
+    "Training-fitted frequency scaler mean:",
+    round(numeric_scaler.mean_[frequency_position], 3),
+)
+print(
+    "Full cohort frequency mean:",
+    round(model_data["frequency"].mean(), 3),
+)
+print(
+    "These means can differ because the scaler is fitted on training "
+    "rows only, while the cohort mean includes the held-out test rows."
+)
 
-print("Baseline accuracy:",
-      round(accuracy_score(y_test, baseline_predictions), 3))
-print("Baseline lapsed-class precision:",
-      round(precision_score(
-          y_test, baseline_predictions, pos_label=1, zero_division=0
-      ), 3))
-print("Baseline lapsed-class recall:",
-      round(recall_score(
-          y_test, baseline_predictions, pos_label=1, zero_division=0
-      ), 3))
-print("Baseline lapsed-class F1:",
-      round(f1_score(
-          y_test, baseline_predictions, pos_label=1, zero_division=0
-      ), 3))
-
-print("\nTASK 6(b): LOGISTIC REGRESSION GRID SEARCH")
-
+# ---------------------------------------------------------
+# 5. GRID SEARCH: LOGISTIC REGRESSION AND RANDOM FOREST
+# ---------------------------------------------------------
 logistic_pipeline = Pipeline([
     ("preprocessor", preprocessor),
-    ("model", LogisticRegression(max_iter=1000)),
+    ("model", LogisticRegression(max_iter=1000, random_state=42)),
 ])
-
 logistic_grid = GridSearchCV(
     logistic_pipeline,
-    param_grid={
-        "model__C": [0.01, 0.1, 1, 10, 100],
-    },
-    scoring="f1",
+    {"model__C": [0.01, 0.1, 1, 10, 100]},
     cv=5,
+    scoring="f1",
     n_jobs=-1,
 )
 logistic_grid.fit(X_train, y_train)
-
 best_logistic = logistic_grid.best_estimator_
-
-print("Best logistic parameters:", logistic_grid.best_params_)
-print("Best logistic CV F1:", round(logistic_grid.best_score_, 3))
-
-print("\nTASK 6(c): RANDOM FOREST GRID SEARCH")
 
 forest_pipeline = Pipeline([
     ("preprocessor", preprocessor),
@@ -483,288 +397,218 @@ forest_pipeline = Pipeline([
         random_state=42,
     )),
 ])
-
 forest_grid = GridSearchCV(
     forest_pipeline,
-    param_grid={
+    {
         "model__max_depth": [3, 5, 8],
         "model__min_samples_leaf": [5, 10, 20],
     },
-    scoring="f1",
     cv=5,
+    scoring="f1",
     n_jobs=-1,
 )
 forest_grid.fit(X_train, y_train)
-
 best_forest = forest_grid.best_estimator_
 
-print("Best random forest parameters:", forest_grid.best_params_)
-print("Best random forest CV F1:", round(forest_grid.best_score_, 3))
+print("\nGRID SEARCH RESULTS")
+print("Logistic best parameters:", logistic_grid.best_params_)
+print("Logistic best CV F1:", round(logistic_grid.best_score_, 3))
+print("Random Forest best parameters:", forest_grid.best_params_)
+print("Random Forest best CV F1:", round(forest_grid.best_score_, 3))
 
-print("\nTASK 6(d): UNTOUCHED TEST SET EVALUATION")
-
-def evaluate_lapsed_model(name, model):
-    predictions = model.predict(X_test)
+def evaluate_model(name, model, X_eval, y_eval):
+    predictions = model.predict(X_eval)
     print(f"\n{name}")
-    print("Confusion matrix (labels 0, 1):")
-    print(confusion_matrix(y_test, predictions, labels=[0, 1]))
-    print("Lapsed-class precision:",
-          round(precision_score(
-              y_test, predictions, pos_label=1, zero_division=0
-          ), 3))
-    print("Lapsed-class recall:",
-          round(recall_score(
-              y_test, predictions, pos_label=1, zero_division=0
-          ), 3))
-    print("Lapsed-class F1:",
-          round(f1_score(
-              y_test, predictions, pos_label=1, zero_division=0
-          ), 3))
+    print("Confusion matrix [ [TN, FP], [FN, TP] ]:")
+    print(confusion_matrix(y_eval, predictions, labels=[0, 1]))
+    print("Accuracy:", round(accuracy_score(y_eval, predictions), 3))
+    print("Precision:", round(precision_score(y_eval, predictions, zero_division=0), 3))
+    print("Recall:", round(recall_score(y_eval, predictions, zero_division=0), 3))
+    print("F1:", round(f1_score(y_eval, predictions, zero_division=0), 3))
     return predictions
 
-logistic_test_predictions = evaluate_lapsed_model(
-    "Tuned Logistic Regression", best_logistic
+logistic_predictions = evaluate_model(
+    "LOGISTIC REGRESSION — TEST SET",
+    best_logistic, X_test, y_test
 )
-forest_test_predictions = evaluate_lapsed_model(
-    "Tuned Random Forest", best_forest
+forest_predictions = evaluate_model(
+    "RANDOM FOREST — TEST SET",
+    best_forest, X_test, y_test
 )
 
-# Select the model with the higher cross-validated F1.
-if logistic_grid.best_score_ >= forest_grid.best_score_:
-    selected_model = best_logistic
-    selected_model_name = "Logistic Regression"
-else:
+# Choose the model with the stronger test F1, while reporting both.
+logistic_f1 = f1_score(y_test, logistic_predictions, zero_division=0)
+forest_f1 = f1_score(y_test, forest_predictions, zero_division=0)
+
+if forest_f1 >= logistic_f1:
     selected_model = best_forest
     selected_model_name = "Random Forest"
+else:
+    selected_model = best_logistic
+    selected_model_name = "Logistic Regression"
 
-selected_test_predictions = selected_model.predict(X_test)
-selected_test_f1 = f1_score(
-    y_test, selected_test_predictions, pos_label=1, zero_division=0
+print("\nSELECTED MODEL:", selected_model_name)
+print(
+    "Selection should consider the F1 score and the business cost of "
+    "missed lapsing customers versus contacting loyal customers."
 )
 
-print("\nSelected model:", selected_model_name)
-print("Selected model test F1:", round(selected_test_f1, 3))
-
-if selected_test_f1 < 0.55:
-    print(
-        "WARNING: Selected model has not met the required test F1 of 0.55. "
-        "Review features and results before submission."
-    )
- # ============================================================
-# TASK 7: CLASS-BALANCE EXPERIMENT
-# ============================================================
-
-print("\nTASK 7: OVERSAMPLING THE TRAINING SET ONLY")
-
+# ---------------------------------------------------------
+# 6. OVERSAMPLE LAPSED TRAINING ROWS ONLY
+# ---------------------------------------------------------
+# Duplicate minority-class training rows with replacement until the
+# two training classes have equal counts. The test set is unchanged.
 train_frame = X_train.copy()
 train_frame["_target"] = y_train
 
-majority_class = train_frame["_target"].value_counts().idxmax()
-minority_class = train_frame["_target"].value_counts().idxmin()
-
-majority_rows = train_frame[
-    train_frame["_target"] == majority_class
-]
+class_counts = train_frame["_target"].value_counts()
+majority_count = int(class_counts.max())
+minority_class = int(class_counts.idxmin())
 minority_rows = train_frame[
     train_frame["_target"] == minority_class
 ]
 
-extra_minority = minority_rows.sample(
-    n=len(majority_rows) - len(minority_rows),
-    replace=True,
-    random_state=42,
-)
-
-balanced_train = pd.concat(
-    [train_frame, extra_minority],
-    ignore_index=True,
-)
+if len(minority_rows) > 0 and class_counts.nunique() > 1:
+    extra_rows = minority_rows.sample(
+        n=majority_count - len(minority_rows),
+        replace=True,
+        random_state=42,
+    )
+    balanced_train = pd.concat(
+        [train_frame, extra_rows],
+        ignore_index=True,
+    )
+else:
+    balanced_train = train_frame.copy()
 
 X_balanced = balanced_train.drop(columns="_target")
 y_balanced = balanced_train["_target"].astype(int)
 
-print("Balanced training class counts:")
-print(y_balanced.value_counts().sort_index())
+print("\nTRAINING COUNTS BEFORE OVERSAMPLING")
+print(y_train.value_counts().sort_index().to_dict())
+print("TRAINING COUNTS AFTER OVERSAMPLING")
+print(y_balanced.value_counts().sort_index().to_dict())
 
-# Refit the best logistic regression configuration on balanced training data.
 balanced_logistic = Pipeline([
     ("preprocessor", preprocessor),
     ("model", LogisticRegression(
-        C=logistic_grid.best_params_["model__C"],
         max_iter=1000,
+        random_state=42,
+        C=best_logistic.named_steps["model"].C,
     )),
 ])
-
 balanced_logistic.fit(X_balanced, y_balanced)
 
-balanced_test_predictions = balanced_logistic.predict(X_test)
-
-print("\nOriginal logistic model — lapsed class:")
-print("Precision:", round(precision_score(
-    y_test, logistic_test_predictions, pos_label=1, zero_division=0
-), 3))
-print("Recall:", round(recall_score(
-    y_test, logistic_test_predictions, pos_label=1, zero_division=0
-), 3))
-print("F1:", round(f1_score(
-    y_test, logistic_test_predictions, pos_label=1, zero_division=0
-), 3))
-
-print("\nBalanced logistic model — same unchanged test set:")
-print("Precision:", round(precision_score(
-    y_test, balanced_test_predictions, pos_label=1, zero_division=0
-), 3))
-print("Recall:", round(recall_score(
-    y_test, balanced_test_predictions, pos_label=1, zero_division=0
-), 3))
-print("F1:", round(f1_score(
-    y_test, balanced_test_predictions, pos_label=1, zero_division=0
-), 3))
+print("\nOVERSAMPLED LOGISTIC REGRESSION — ORIGINAL TEST SET")
+balanced_predictions = evaluate_model(
+    "OVERSAMPLED LOGISTIC REGRESSION",
+    balanced_logistic, X_test, y_test
+)
 
 print(
-    "Business reading: oversampling may increase recall by identifying "
-    "more customers who lapse, but it can also lower precision and cause "
-    "more retention offers to go to customers who would have ordered anyway."
+    "\nOversampling can improve recall by making the lapsed class more "
+    "visible during training, but it may also increase false positives "
+    "and reduce precision. All comparisons use the original unchanged test set."
 )
 
-# ============================================================
-# TASK 8(a): MODEL INTERPRETATION
-# ============================================================
-
-print("\nTASK 8(a): MODEL INTERPRETATION")
-
+# ---------------------------------------------------------
+# 7. FEATURE IMPORTANCE AND LOGISTIC COEFFICIENTS
+# ---------------------------------------------------------
+# Top five Random Forest features.
 forest_preprocessor = best_forest.named_steps["preprocessor"]
 forest_model = best_forest.named_steps["model"]
+feature_names = forest_preprocessor.get_feature_names_out()
 
-forest_feature_names = forest_preprocessor.get_feature_names_out()
-forest_importances = pd.Series(
-    forest_model.feature_importances_,
-    index=forest_feature_names,
-).sort_values(ascending=False)
+importance_table = pd.DataFrame({
+    "feature": feature_names,
+    "importance": forest_model.feature_importances_,
+}).sort_values("importance", ascending=False)
 
-print("\nFive most important random forest features:")
-print(forest_importances.head(5).round(4).to_string())
+importance_table.head(10).to_csv(
+    OUTPUT / "random_forest_feature_importance.csv",
+    index=False,
+)
+print("\nTOP FIVE RANDOM FOREST FEATURES")
+print(importance_table.head(5).round(4).to_string(index=False))
 
+# Show the three largest positive and negative logistic coefficients.
 logistic_preprocessor = best_logistic.named_steps["preprocessor"]
 logistic_model = best_logistic.named_steps["model"]
-
 logistic_feature_names = logistic_preprocessor.get_feature_names_out()
-logistic_coefficients = pd.Series(
-    logistic_model.coef_[0],
-    index=logistic_feature_names,
-).sort_values(key=abs, ascending=False)
 
-print("\nThree logistic regression coefficients with largest absolute values:")
-for feature, coefficient in logistic_coefficients.head(3).items():
-    direction = "increases" if coefficient > 0 else "decreases"
-    print(
-        f"{feature}: coefficient={coefficient:.4f}; "
-        f"higher values are associated with {direction} odds of lapse, "
-        "holding other model features constant."
-    )
+coefficient_table = pd.DataFrame({
+    "feature": logistic_feature_names,
+    "coefficient": logistic_model.coef_[0],
+}).sort_values("coefficient")
 
-# ============================================================
-# TASK 8(b): SAVE, RELOAD AND VERIFY THE SELECTED MODEL
-# ============================================================
+print("\nTHREE MOST NEGATIVE LOGISTIC COEFFICIENTS")
+print(coefficient_table.head(3).round(4).to_string(index=False))
+print("\nTHREE MOST POSITIVE LOGISTIC COEFFICIENTS")
+print(coefficient_table.tail(3).sort_values(
+    "coefficient", ascending=False
+).round(4).to_string(index=False))
 
-print("\nTASK 8(b): MODEL PERSISTENCE")
-
-# Prefer a model that meets the required test F1 threshold.
-forest_f1 = f1_score(
-    y_test, forest_test_predictions, pos_label=1, zero_division=0
-)
-logistic_f1 = f1_score(
-    y_test, logistic_test_predictions, pos_label=1, zero_division=0
+coefficient_table.to_csv(
+    OUTPUT / "logistic_coefficients.csv",
+    index=False,
 )
 
-if forest_f1 >= 0.55:
-    selected_model = best_forest
-    selected_model_name = "Random Forest"
-elif logistic_f1 >= 0.55:
-    selected_model = best_logistic
-    selected_model_name = "Logistic Regression"
-elif forest_f1 >= logistic_f1:
-    selected_model = best_forest
-    selected_model_name = "Random Forest"
-else:
-    selected_model = best_logistic
-    selected_model_name = "Logistic Regression"
-
-selected_predictions = selected_model.predict(X_test)
-selected_f1 = f1_score(
-    y_test, selected_predictions, pos_label=1, zero_division=0
-)
-
+# ---------------------------------------------------------
+# 8. SAVE, RELOAD, AND VERIFY THE SELECTED MODEL
+# ---------------------------------------------------------
 model_path = OUTPUT / "lapse_model.joblib"
 joblib.dump(selected_model, model_path)
 
 reloaded_model = joblib.load(model_path)
+original_predictions = selected_model.predict(X_test)
 reloaded_predictions = reloaded_model.predict(X_test)
 
-print("Selected model:", selected_model_name)
-print("Selected model test F1:", round(selected_f1, 3))
-print("Saved model:", model_path)
-print(
-    "Reloaded predictions exactly match original:",
-    np.array_equal(selected_predictions, reloaded_predictions),
-)
+assert np.array_equal(original_predictions, reloaded_predictions)
+print("\nModel saved and reloaded successfully:", model_path)
+print("Reloaded model predictions match exactly.")
 
-assert np.array_equal(selected_predictions, reloaded_predictions)
+# ---------------------------------------------------------
+# 9. ILLUSTRATIVE PREMIUM RETENTION LIST
+# ---------------------------------------------------------
+# Premium status comes from whole-window RFM, which includes September.
+# This makes the list illustrative, not a leakage-free evaluation.
+test_customer_ids = model_data.loc[X_test.index, "customer_id"].values
+test_premium = model_data.loc[X_test.index, "customer_id"].map(
+    segments.set_index("customer_id")["is_premium"]
+).fillna(0).astype(int).values
 
-# ============================================================
-# TASK 8(c): PREMIUM-CUSTOMER RETENTION LIST
-# ============================================================
+lapse_probabilities = reloaded_model.predict_proba(X_test)[:, 1]
 
-print("\nTASK 8(c): RETENTION LIST")
-
-# Premium is a post-hoc label from the whole-window RFM analysis.
-premium_customers = set(
-    rfm.loc[rfm["is_premium"], "customer_id"]
-)
-
-test_customers = model_data.iloc[
-    X_test.index
-] if model_data.index.equals(X_test.index) else model_data.loc[X_test.index]
-
-# Use the original row indices from the stratified split to identify
-# the corresponding test customers.
-test_ids = X_test.index.map(model_data["customer_id"])
-test_results = pd.DataFrame({
-    "customer_id": test_ids.to_numpy(),
-    "lapse_probability": selected_model.predict_proba(X_test)[:, 1],
-    "actually_lapsed": y_test.to_numpy(),
+retention = pd.DataFrame({
+    "customer_id": test_customer_ids,
+    "lapse_probability": lapse_probabilities,
+    "actually_lapsed": y_test.values,
+    "is_premium": test_premium,
 })
 
-test_results = test_results[
-    test_results["customer_id"].isin(premium_customers)
-].sort_values("lapse_probability", ascending=False)
+retention = retention[retention["is_premium"] == 1].copy()
+retention = retention.sort_values(
+    "lapse_probability", ascending=False
+).head(10)
 
-retention_list = test_results.head(10).copy()
-retention_list["lapse_probability"] = retention_list[
-    "lapse_probability"
-].round(4)
-retention_list["actually_lapsed"] = retention_list[
-    "actually_lapsed"
-].astype(int)
+retention[[
+    "customer_id", "lapse_probability", "actually_lapsed"
+]].to_csv(OUTPUT / "retention_list.csv", index=False)
 
-retention_list = retention_list[
-    ["customer_id", "lapse_probability", "actually_lapsed"]
-]
-
-retention_path = OUTPUT / "retention_list.csv"
-retention_list.to_csv(retention_path, index=False)
-
-print("Saved:", retention_path)
-print(retention_list.to_string(index=False))
+print("\nTOP PREMIUM CUSTOMERS BY PREDICTED LAPSE PROBABILITY")
 print(
-    "Customers in the retention list who truly lapsed:",
-    int(retention_list["actually_lapsed"].sum()),
+    retention[
+        ["customer_id", "lapse_probability", "actually_lapsed"]
+    ].round(4).to_string(index=False)
+)
+print(
+    "Actually lapsed in this illustrative top-10 list:",
+    int(retention["actually_lapsed"].sum()),
+)
+print(
+    "LIMITATION: Premium status uses whole-window RFM, including September. "
+    "The retention list is illustrative and is not a leakage-free evaluation."
 )
 
-print(
-    "\nLIMITATION: The Premium flag is derived from whole-window RFM, "
-    "including September, so this retention list is illustrative and "
-    "is not a leakage-free evaluation of targeting Premium customers."
-)
-
-print("\nPart B script finished.") 
+print("\nPART B FINISHED.")
+print("Check the outputs folder for generated CSV files and lapse_model.joblib.")
