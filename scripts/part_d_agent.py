@@ -291,6 +291,22 @@ def main():
             f"tokens={result['tokens_used']}"
         )
 
+    # Rebuild the ledger from all results, including recovered checkpoints.
+    ledger = []
+    for result in results:
+        outcome = result["actual_outcome"]
+        ledger.append({
+            "scenario_id": result["scenario_id"],
+            "order_id": result.get("order_id"),
+            "outcome": outcome,
+            "refund_inr": round(float(result["refund_inr"]), 2),
+            "ledger_status": (
+                "ISSUED" if outcome == "REFUND"
+                else "PENDING_HUMAN" if outcome == "ESCALATE"
+                else "NO_PAYMENT"
+            ),
+        })
+
     with (OUTPUT_DIR / "agent_runs.jsonl").open("w", encoding="utf-8") as f:
         for result in results:
             f.write(json.dumps(result, ensure_ascii=False) + "\n")
