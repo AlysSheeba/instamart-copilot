@@ -1,0 +1,3 @@
+configuration,chunk_count,questions,source_hits,source_accuracy_pct,fact_hits,fact_accuracy_pct,total_tokens,mean_tokens_per_question
+overlap_10,17,14,12,85.71,14,100.0,3096,221.14
+overlap_0,13,14,12,85.71,11,78.57,3107,221.93
