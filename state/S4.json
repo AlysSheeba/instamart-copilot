@@ -1,11 +1,20 @@
 {
   "scenario_id": "S4",
+  "source_scenario_id": "S4",
   "complete": true,
   "result": {
     "scenario_id": "S4",
     "customer_id": "C0001",
     "order_id": "ORD-100001",
     "actual_outcome": "DENIED",
+    "status": "COMPLETED",
+    "final_answer": "DENIED",
+    "llm_calls": 4,
+    "tools_executed": [
+      "get_order",
+      "search_policy",
+      "calculate_refund"
+    ],
     "expected_outcome": "DENIED",
     "refund_inr": 0.0,
     "expected_refund_inr": 0.0,
@@ -13,7 +22,7 @@
     "refund_match": true,
     "steps": 4,
     "tokens_used": 877,
-    "elapsed_seconds": 0.0062,
+    "elapsed_seconds": 0.0098,
     "trace": [
       {
         "step": 1,
@@ -95,6 +104,9 @@
       "content": "{\"refund_inr\": 0.0}"
     }
   ],
+  "steps": 4,
+  "tokens": 877,
+  "tokens_used": 877,
   "trace": [
     {
       "step": 1,
@@ -116,5 +128,12 @@
       "finish_reason": "stop",
       "tokens": 378
     }
+  ],
+  "order_id": "ORD-100001",
+  "refund_amount": 0.0,
+  "tools_executed": [
+    "get_order",
+    "search_policy",
+    "calculate_refund"
   ]
 }

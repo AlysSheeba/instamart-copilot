@@ -1,11 +1,21 @@
 {
   "scenario_id": "S1",
+  "source_scenario_id": "S1",
   "complete": true,
   "result": {
     "scenario_id": "S1",
     "customer_id": "C0007",
     "order_id": "ORD-100048",
     "actual_outcome": "REFUND",
+    "status": "COMPLETED",
+    "final_answer": "REFUND",
+    "llm_calls": 5,
+    "tools_executed": [
+      "get_order",
+      "search_policy",
+      "calculate_refund",
+      "issue_refund"
+    ],
     "expected_outcome": "REFUND",
     "refund_inr": 128.25,
     "expected_refund_inr": 128.25,
@@ -13,7 +23,7 @@
     "refund_match": true,
     "steps": 5,
     "tokens_used": 1292,
-    "elapsed_seconds": 0.0107,
+    "elapsed_seconds": 0.0166,
     "trace": [
       {
         "step": 1,
@@ -116,6 +126,9 @@
       "content": "{\"status\": \"ISSUED\", \"order_id\": \"ORD-100048\", \"refund_inr\": 128.25}"
     }
   ],
+  "steps": 5,
+  "tokens": 1292,
+  "tokens_used": 1292,
   "trace": [
     {
       "step": 1,
@@ -142,5 +155,13 @@
       "finish_reason": "stop",
       "tokens": 399
     }
+  ],
+  "order_id": "ORD-100048",
+  "refund_amount": 128.25,
+  "tools_executed": [
+    "get_order",
+    "search_policy",
+    "calculate_refund",
+    "issue_refund"
   ]
 }

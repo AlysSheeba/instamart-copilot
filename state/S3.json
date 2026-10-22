@@ -1,11 +1,21 @@
 {
   "scenario_id": "S3",
+  "source_scenario_id": "S3",
   "complete": true,
   "result": {
     "scenario_id": "S3",
     "customer_id": "C0016",
     "order_id": "ORD-100145",
     "actual_outcome": "ESCALATE",
+    "status": "COMPLETED",
+    "final_answer": "ESCALATE",
+    "llm_calls": 5,
+    "tools_executed": [
+      "get_order",
+      "search_policy",
+      "calculate_refund",
+      "escalate_to_human"
+    ],
     "expected_outcome": "ESCALATE",
     "refund_inr": 1999.0,
     "expected_refund_inr": 1999.0,
@@ -13,7 +23,7 @@
     "refund_match": true,
     "steps": 5,
     "tokens_used": 1287,
-    "elapsed_seconds": 0.008,
+    "elapsed_seconds": 0.0126,
     "trace": [
       {
         "step": 1,
@@ -116,6 +126,9 @@
       "content": "{\"status\": \"ESCALATED\", \"order_id\": \"ORD-100145\", \"refund_inr\": 1999.0, \"message\": \"Human support lead approval required.\"}"
     }
   ],
+  "steps": 5,
+  "tokens": 1287,
+  "tokens_used": 1287,
   "trace": [
     {
       "step": 1,
@@ -142,5 +155,13 @@
       "finish_reason": "stop",
       "tokens": 410
     }
+  ],
+  "order_id": "ORD-100145",
+  "refund_amount": 1999.0,
+  "tools_executed": [
+    "get_order",
+    "search_policy",
+    "calculate_refund",
+    "escalate_to_human"
   ]
 }

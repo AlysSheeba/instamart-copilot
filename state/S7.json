@@ -1,24 +1,61 @@
 {
   "scenario_id": "S7",
+  "source_scenario_id": "S7",
   "complete": true,
   "result": {
     "scenario_id": "S7",
     "customer_id": "C0007",
     "order_id": null,
     "actual_outcome": "FALLBACK",
+    "status": "FALLBACK_MAX_ITERATIONS",
+    "final_answer": "Human handoff required: FALLBACK_MAX_ITERATIONS.",
+    "llm_calls": 6,
+    "tools_executed": [
+      "search_policy",
+      "search_policy",
+      "search_policy",
+      "search_policy",
+      "search_policy",
+      "search_policy"
+    ],
     "expected_outcome": "FALLBACK",
     "refund_inr": 0.0,
     "expected_refund_inr": 0.0,
     "outcome_match": true,
     "refund_match": true,
-    "steps": 1,
-    "tokens_used": 47,
-    "elapsed_seconds": 0.0,
+    "steps": 6,
+    "tokens_used": 4587,
+    "elapsed_seconds": 0.0201,
     "trace": [
       {
         "step": 1,
         "finish_reason": "tool_calls",
         "tokens": 47
+      },
+      {
+        "step": 2,
+        "finish_reason": "tool_calls",
+        "tokens": 334
+      },
+      {
+        "step": 3,
+        "finish_reason": "tool_calls",
+        "tokens": 621
+      },
+      {
+        "step": 4,
+        "finish_reason": "tool_calls",
+        "tokens": 908
+      },
+      {
+        "step": 5,
+        "finish_reason": "tool_calls",
+        "tokens": 1195
+      },
+      {
+        "step": 6,
+        "finish_reason": "tool_calls",
+        "tokens": 1482
       }
     ]
   },
@@ -30,13 +67,147 @@
     {
       "role": "user",
       "content": "[LOOP] Refund order ORD-100048."
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "name": "search_policy",
+          "arguments": "{\"query\": \"refund policy\"}"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "name": "search_policy",
+      "content": "{\"policies\": [{\"source\": \"payment_policy.txt\", \"text\": \"Payment Policy. Customers can pay using UPI, debit card, credit card or cash on delivery. Cash on delivery is available only for orders up to INR 2500. If a payment fails but money is deducted, the amount is returned automatically within 48 hours. A customer who sees two charges for one order should raise a billing ticket with the order identifier. Wallet balance can be used for any order and is never refunded as cash. Coupons cannot be combined with wallet balance on the same order.\\n\"}, {\"source\": \"refund_policy.txt\", \"text\": \"Refund Policy. A refund can be requested only for orders whose status is completed. Orders with status cancelled were never charged, so no refund applies to them. If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount. If a completed order is delivered in 45 minutes or less, no late-delivery refund is paid. Refunds up to INR 1000 are approved automatically by the support system. A refund above INR 1000 must be approved by a human support lead before money is returned. Approved refunds are credited to the original payment method within 5 working days. A refund request must be raised within 7 days of the delivery date.\\n\"}]}"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_2",
+          "name": "search_policy",
+          "arguments": "{\"query\": \"refund policy\"}"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "name": "search_policy",
+      "content": "{\"policies\": [{\"source\": \"payment_policy.txt\", \"text\": \"Payment Policy. Customers can pay using UPI, debit card, credit card or cash on delivery. Cash on delivery is available only for orders up to INR 2500. If a payment fails but money is deducted, the amount is returned automatically within 48 hours. A customer who sees two charges for one order should raise a billing ticket with the order identifier. Wallet balance can be used for any order and is never refunded as cash. Coupons cannot be combined with wallet balance on the same order.\\n\"}, {\"source\": \"refund_policy.txt\", \"text\": \"Refund Policy. A refund can be requested only for orders whose status is completed. Orders with status cancelled were never charged, so no refund applies to them. If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount. If a completed order is delivered in 45 minutes or less, no late-delivery refund is paid. Refunds up to INR 1000 are approved automatically by the support system. A refund above INR 1000 must be approved by a human support lead before money is returned. Approved refunds are credited to the original payment method within 5 working days. A refund request must be raised within 7 days of the delivery date.\\n\"}]}"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_3",
+          "name": "search_policy",
+          "arguments": "{\"query\": \"refund policy\"}"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "name": "search_policy",
+      "content": "{\"policies\": [{\"source\": \"payment_policy.txt\", \"text\": \"Payment Policy. Customers can pay using UPI, debit card, credit card or cash on delivery. Cash on delivery is available only for orders up to INR 2500. If a payment fails but money is deducted, the amount is returned automatically within 48 hours. A customer who sees two charges for one order should raise a billing ticket with the order identifier. Wallet balance can be used for any order and is never refunded as cash. Coupons cannot be combined with wallet balance on the same order.\\n\"}, {\"source\": \"refund_policy.txt\", \"text\": \"Refund Policy. A refund can be requested only for orders whose status is completed. Orders with status cancelled were never charged, so no refund applies to them. If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount. If a completed order is delivered in 45 minutes or less, no late-delivery refund is paid. Refunds up to INR 1000 are approved automatically by the support system. A refund above INR 1000 must be approved by a human support lead before money is returned. Approved refunds are credited to the original payment method within 5 working days. A refund request must be raised within 7 days of the delivery date.\\n\"}]}"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_4",
+          "name": "search_policy",
+          "arguments": "{\"query\": \"refund policy\"}"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "name": "search_policy",
+      "content": "{\"policies\": [{\"source\": \"payment_policy.txt\", \"text\": \"Payment Policy. Customers can pay using UPI, debit card, credit card or cash on delivery. Cash on delivery is available only for orders up to INR 2500. If a payment fails but money is deducted, the amount is returned automatically within 48 hours. A customer who sees two charges for one order should raise a billing ticket with the order identifier. Wallet balance can be used for any order and is never refunded as cash. Coupons cannot be combined with wallet balance on the same order.\\n\"}, {\"source\": \"refund_policy.txt\", \"text\": \"Refund Policy. A refund can be requested only for orders whose status is completed. Orders with status cancelled were never charged, so no refund applies to them. If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount. If a completed order is delivered in 45 minutes or less, no late-delivery refund is paid. Refunds up to INR 1000 are approved automatically by the support system. A refund above INR 1000 must be approved by a human support lead before money is returned. Approved refunds are credited to the original payment method within 5 working days. A refund request must be raised within 7 days of the delivery date.\\n\"}]}"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_5",
+          "name": "search_policy",
+          "arguments": "{\"query\": \"refund policy\"}"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "name": "search_policy",
+      "content": "{\"policies\": [{\"source\": \"payment_policy.txt\", \"text\": \"Payment Policy. Customers can pay using UPI, debit card, credit card or cash on delivery. Cash on delivery is available only for orders up to INR 2500. If a payment fails but money is deducted, the amount is returned automatically within 48 hours. A customer who sees two charges for one order should raise a billing ticket with the order identifier. Wallet balance can be used for any order and is never refunded as cash. Coupons cannot be combined with wallet balance on the same order.\\n\"}, {\"source\": \"refund_policy.txt\", \"text\": \"Refund Policy. A refund can be requested only for orders whose status is completed. Orders with status cancelled were never charged, so no refund applies to them. If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount. If a completed order is delivered in 45 minutes or less, no late-delivery refund is paid. Refunds up to INR 1000 are approved automatically by the support system. A refund above INR 1000 must be approved by a human support lead before money is returned. Approved refunds are credited to the original payment method within 5 working days. A refund request must be raised within 7 days of the delivery date.\\n\"}]}"
+    },
+    {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [
+        {
+          "id": "call_6",
+          "name": "search_policy",
+          "arguments": "{\"query\": \"refund policy\"}"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "name": "search_policy",
+      "content": "{\"policies\": [{\"source\": \"payment_policy.txt\", \"text\": \"Payment Policy. Customers can pay using UPI, debit card, credit card or cash on delivery. Cash on delivery is available only for orders up to INR 2500. If a payment fails but money is deducted, the amount is returned automatically within 48 hours. A customer who sees two charges for one order should raise a billing ticket with the order identifier. Wallet balance can be used for any order and is never refunded as cash. Coupons cannot be combined with wallet balance on the same order.\\n\"}, {\"source\": \"refund_policy.txt\", \"text\": \"Refund Policy. A refund can be requested only for orders whose status is completed. Orders with status cancelled were never charged, so no refund applies to them. If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount. If a completed order is delivered in 45 minutes or less, no late-delivery refund is paid. Refunds up to INR 1000 are approved automatically by the support system. A refund above INR 1000 must be approved by a human support lead before money is returned. Approved refunds are credited to the original payment method within 5 working days. A refund request must be raised within 7 days of the delivery date.\\n\"}]}"
     }
   ],
+  "steps": 6,
+  "tokens": 4587,
+  "tokens_used": 4587,
   "trace": [
     {
       "step": 1,
       "finish_reason": "tool_calls",
       "tokens": 47
+    },
+    {
+      "step": 2,
+      "finish_reason": "tool_calls",
+      "tokens": 334
+    },
+    {
+      "step": 3,
+      "finish_reason": "tool_calls",
+      "tokens": 621
+    },
+    {
+      "step": 4,
+      "finish_reason": "tool_calls",
+      "tokens": 908
+    },
+    {
+      "step": 5,
+      "finish_reason": "tool_calls",
+      "tokens": 1195
+    },
+    {
+      "step": 6,
+      "finish_reason": "tool_calls",
+      "tokens": 1482
     }
+  ],
+  "order_id": null,
+  "refund_amount": 0.0,
+  "tools_executed": [
+    "search_policy",
+    "search_policy",
+    "search_policy",
+    "search_policy",
+    "search_policy",
+    "search_policy"
   ]
 }

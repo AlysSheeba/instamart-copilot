@@ -15,8 +15,8 @@ POLICY_DIR = ROOT / "data" / "policies"
 STATE_DIR = ROOT / "state"
 OUTPUT_DIR = ROOT / "outputs"
 
-MAX_STEPS = 8
-MAX_TOKENS = 3000
+MAX_STEPS = 6
+MAX_TOKENS = 6000
 MAX_SECONDS = 10
 MAX_RETRIES = 3
 
@@ -103,42 +103,56 @@ def save_json(path, value):
     temp_path.replace(path)
 
 
-def run_scenario(scenario, ledger):
+def run_scenario(scenario, ledger, token_limit=MAX_TOKENS, time_limit_seconds=MAX_SECONDS, resume=False, crash_after_tool=None):
     scenario_id = scenario["scenario_id"]
     checkpoint = STATE_DIR / f"{scenario_id}.json"
 
+    saved = None
     if checkpoint.exists():
         saved = json.loads(checkpoint.read_text(encoding="utf-8"))
         if saved.get("complete"):
             return saved["result"]
 
-    user_message = scenario["message"]
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "AGENT. Follow refund policy. Use tools to verify orders, "
-                "check eligibility, calculate refunds, and escalate refunds "
-                "above INR 1000. Never invent order data."
-            ),
-        },
-        {"role": "user", "content": user_message},
-    ]
-
     start = time.monotonic()
-    token_total = 0
-    steps = 0
     result = "FALLBACK"
-    refund_amount = 0.0
-    order_id = None
-    trace = []
+    status = "COMPLETED"
+
+    if resume and saved:
+        messages = saved["messages"]
+        token_total = saved.get("tokens_used", saved.get("tokens", 0))
+        steps = saved.get("steps", 0)
+        trace = saved.get("trace", [])
+        order_id = saved.get("order_id")
+        refund_amount = saved.get("refund_amount", 0.0)
+        tools_executed = saved.get("tools_executed", [])
+    else:
+        user_message = scenario["message"]
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "AGENT. Follow refund policy. Use tools to verify orders, "
+                    "check eligibility, calculate refunds, and escalate refunds "
+                    "above INR 1000. Never invent order data."
+                ),
+            },
+            {"role": "user", "content": user_message},
+        ]
+        token_total = 0
+        steps = 0
+        trace = []
+        order_id = None
+        refund_amount = 0.0
+        tools_executed = []
 
     while steps < MAX_STEPS:
-        if time.monotonic() - start > MAX_SECONDS:
+        if time.monotonic() - start >= time_limit_seconds:
             result = "FALLBACK"
+            status = "FALLBACK_TIMEOUT"
             break
-        if token_total >= MAX_TOKENS:
+        if token_total >= token_limit:
             result = "FALLBACK"
+            status = "FALLBACK_TOKEN_LIMIT"
             break
 
         response = None
@@ -163,6 +177,12 @@ def run_scenario(scenario, ledger):
             "finish_reason": response.choices[0].finish_reason,
             "tokens": response.usage.total_tokens,
         })
+
+        # Stop before executing a tool if this response exceeds the limit.
+        if token_total > token_limit:
+            result = "FALLBACK"
+            status = "FALLBACK_TOKEN_LIMIT"
+            break
 
         if not message.tool_calls:
             text = message.content or ""
@@ -189,11 +209,8 @@ def run_scenario(scenario, ledger):
 
         if tool_name == "get_order":
             order_id = args.get("order_id")
-        if tool_name == "search_policy" and "[LOOP]" in user_message:
-            result = "FALLBACK"
-            break
-
         tool_result = execute_tool(tool_name, args)
+        tools_executed.append(tool_name)
         if tool_name == "issue_refund":
             refund_amount = float(args["refund_inr"])
         elif tool_name == "escalate_to_human":
@@ -216,20 +233,37 @@ def run_scenario(scenario, ledger):
 
         checkpoint_data = {
             "scenario_id": scenario_id,
+            "source_scenario_id": scenario.get(
+                "source_scenario_id", scenario_id
+            ),
             "complete": False,
             "messages": messages,
             "steps": steps,
             "tokens": token_total,
+            "tokens_used": token_total,
             "trace": trace,
+            "order_id": order_id,
+            "refund_amount": refund_amount,
+            "tools_executed": tools_executed,
         }
         save_json(checkpoint, checkpoint_data)
+
+        # Simulate a crash only after the checkpoint is safely written.
+        if (
+            crash_after_tool is not None
+            and len(tools_executed) == crash_after_tool
+        ):
+            raise RuntimeError(
+                f"Simulated crash after tool {crash_after_tool}: {tool_name}"
+            )
 
     elapsed = round(time.monotonic() - start, 4)
     expected = scenario["expected_outcome"]
     expected_amount = round(float(scenario["expected_refund_inr"]), 2)
 
     # The mock LLM may return a tool result that ends the workflow.
-    if steps >= MAX_STEPS:
+    if steps >= MAX_STEPS and status == "COMPLETED":
+        status = "FALLBACK_MAX_ITERATIONS"
         result = "FALLBACK"
 
     record = {
@@ -237,6 +271,13 @@ def run_scenario(scenario, ledger):
         "customer_id": scenario["customer_id"],
         "order_id": order_id,
         "actual_outcome": result,
+        "status": status,
+        "final_answer": (
+            f"Human handoff required: {status}."
+            if status.startswith("FALLBACK") else result
+        ),
+        "llm_calls": steps,
+        "tools_executed": tools_executed,
         "expected_outcome": expected,
         "refund_inr": round(refund_amount, 2),
         "expected_refund_inr": expected_amount,
@@ -262,12 +303,53 @@ def run_scenario(scenario, ledger):
 
     save_json(checkpoint, {
         "scenario_id": scenario_id,
+        "source_scenario_id": scenario.get(
+            "source_scenario_id", scenario_id
+        ),
         "complete": True,
         "result": record,
         "messages": messages,
+        "steps": steps,
+        "tokens": token_total,
+        "tokens_used": token_total,
         "trace": trace,
+        "order_id": order_id,
+        "refund_amount": refund_amount,
+        "tools_executed": tools_executed,
     })
     return record
+
+
+def resume_agent(run_id, token_limit=MAX_TOKENS,
+                 time_limit_seconds=MAX_SECONDS):
+    """Resume an incomplete run from its most recent saved checkpoint."""
+    checkpoint = STATE_DIR / f"{run_id}.json"
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"No checkpoint found for run: {run_id}")
+
+    saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+    if saved.get("complete"):
+        return saved["result"]
+
+    source_id = saved.get("source_scenario_id", saved["scenario_id"])
+    source = next(
+        (item for item in read_scenarios()
+         if item["scenario_id"] == source_id),
+        None,
+    )
+    if source is None:
+        raise ValueError(f"Scenario not found: {source_id}")
+
+    scenario = dict(source)
+    scenario["scenario_id"] = run_id
+    scenario["source_scenario_id"] = source_id
+    return run_scenario(
+        scenario,
+        [],
+        token_limit=token_limit,
+        time_limit_seconds=time_limit_seconds,
+        resume=True,
+    )
 
 
 def main():

@@ -1,11 +1,18 @@
 {
   "scenario_id": "S6",
+  "source_scenario_id": "S6",
   "complete": true,
   "result": {
     "scenario_id": "S6",
     "customer_id": "C0001",
     "order_id": "ORD-999999",
     "actual_outcome": "NOT_FOUND",
+    "status": "COMPLETED",
+    "final_answer": "NOT_FOUND",
+    "llm_calls": 2,
+    "tools_executed": [
+      "get_order"
+    ],
     "expected_outcome": "NOT_FOUND",
     "refund_inr": 0.0,
     "expected_refund_inr": 0.0,
@@ -13,7 +20,7 @@
     "refund_match": true,
     "steps": 2,
     "tokens_used": 103,
-    "elapsed_seconds": 0.0036,
+    "elapsed_seconds": 0.0069,
     "trace": [
       {
         "step": 1,
@@ -53,6 +60,9 @@
       "content": "{\"error\": \"order_not_found\"}"
     }
   ],
+  "steps": 2,
+  "tokens": 103,
+  "tokens_used": 103,
   "trace": [
     {
       "step": 1,
@@ -64,5 +74,10 @@
       "finish_reason": "stop",
       "tokens": 56
     }
+  ],
+  "order_id": "ORD-999999",
+  "refund_amount": 0.0,
+  "tools_executed": [
+    "get_order"
   ]
 }
